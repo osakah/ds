@@ -200,6 +200,28 @@ go run main.go -config config/myconfig.toml
   - `special_status_domains_all.txt`: 所有特殊状态域名
   - `summary.txt`: 详细的扫描报告
 
+#### 特殊状态域名说明
+- 存储格式：每行 `domain status reason`
+- 常见状态标识（不计入“可注册”）：
+  - `DROPZONE_AVAILABLE`：可通过 Identity Digital Dropzone 申请（并非公开注册）
+  - `PREMIUM`：高级/溢价域名
+  - `RESERVED`：注册局或注册商保留
+  - `REDEMPTION_PERIOD`：赎回期
+  - `PENDING_DELETE`：即将删除
+  - `HOLD`：暂停/冻结（client/server hold 等）
+  - `WHOIS_RATE_LIMITED`：WHOIS 限流，需人工复核
+  - `CHECK_TIMEOUT`：单域名检测超时，未判定
+
+可使用脚本将特殊域名按状态拆分输出：
+
+```bash
+python3 special_domain_processor.py
+
+# 输出目录：
+# domain-check/special/              # 按字符模式分类（AABB/ABCD 等）
+# domain-check/special/by-status/    # 按状态拆分（如 PREMIUM.txt / DROPZONE_AVAILABLE.txt）
+```
+
 ### 查看结果
 
 #### 1. GitHub Artifacts
@@ -220,6 +242,24 @@ go run main.go -config config/myconfig.toml
 - **网络策略**：频繁的 WHOIS 和 DNS 查询可能触发平台的限流
 - **合规性**：请确保遵守相关域名注册商的使用条款
 - **配置文件**：确保使用正确的配置文件路径，避免使用格式错误的文件名
+
+### 稳定性与超时保护
+
+- WHOIS 查询超时保护：单次 WHOIS 调用设置硬超时 10 秒，避免极少数情况下底层库发生卡顿。
+- 单域名整体检测超时：Worker 对每个域名设置 45 秒看门狗，若超时则标记为 `CHECK_TIMEOUT` 并继续处理后续域名，避免队列阻塞导致工作流超时。
+- 限流自动退避：对 WHOIS 限流或“访问受控”等返回，采用指数退避并在最后一次失败时标记 `WHOIS_RATE_LIMITED`，不将该域名计入“可注册”。
+
+提示：上述策略显著降低“进度卡在 [x/y] 不动”导致 6 小时工作流被取消的概率。
+
+### 重新编译二进制
+
+在仓库根目录执行：
+
+```bash
+go build -o domain-scanner .
+```
+
+生成的可执行文件为 `./domain-scanner`，已包含特殊状态标识、超时与去重等最新改动。
 
 #### 🔧 故障排除
 - 如果任务超时，可以减少批次数量或增加延迟时间

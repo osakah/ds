@@ -176,9 +176,9 @@ func main() {
 	results := make(chan types.DomainResult, 1000)
 
 	// Start workers
-	for w := 1; w <= *workers; w++ {
-		go worker.Worker(w, jobs, results, time.Duration(*delay)*time.Millisecond)
-	}
+    for w := 1; w <= *workers; w++ {
+        go worker.Worker(w, jobs, results, time.Duration(*delay)*time.Millisecond, *showRegistered)
+    }
 
 	// Send jobs from domain generator
 	var totalGenerated int

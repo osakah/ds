@@ -110,7 +110,7 @@ func initIndicatorMaps() {
 
 // CheckDomainSignatures checks various signatures to determine domain status
 func CheckDomainSignatures(domain string) ([]string, error) {
-	var signatures []string
+    var signatures []string
 
 	// 1. Check DNS records (if enabled)
 	if globalConfig == nil || globalConfig.Scanner.Methods.DNSCheck {
@@ -120,11 +120,12 @@ func CheckDomainSignatures(domain string) ([]string, error) {
 		}
 	}
 
-	// 2. Check WHOIS information with retry (if enabled)
-	if globalConfig == nil || globalConfig.Scanner.Methods.WHOISCheck {
-		var whoisResult string
-		maxRetries := 3
-		baseDelay := 2 * time.Second // Increased base delay
+    // 2. Check WHOIS information with retry (if enabled)
+    if globalConfig == nil || globalConfig.Scanner.Methods.WHOISCheck {
+        var whoisResult string
+        maxRetries := 3
+        baseDelay := 2 * time.Second // Increased base delay
+        perAttemptTimeout := 10 * time.Second
 
 		for i := 0; i < maxRetries; i++ {
 			// Add a small delay before each WHOIS query to avoid rate limiting
@@ -133,11 +134,11 @@ func CheckDomainSignatures(domain string) ([]string, error) {
 				time.Sleep(waitTime)
 			}
 
-			result, err := whois.Whois(domain)
-			if err == nil {
-				whoisResult = result
-				break
-			}
+            result, err := whoisQueryWithTimeout(domain, perAttemptTimeout)
+            if err == nil {
+                whoisResult = result
+                break
+            }
 
 			// Check if this is a rate limit error
 			if strings.Contains(err.Error(), "connection refused") ||
@@ -209,10 +210,31 @@ func CheckDomainSignatures(domain string) ([]string, error) {
 
 // min returns the smaller of two integers
 func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+    if a < b {
+        return a
+    }
+    return b
+}
+
+// whoisQueryWithTimeout executes a WHOIS lookup with a hard timeout to avoid rare hangs
+func whoisQueryWithTimeout(domain string, timeout time.Duration) (string, error) {
+    type resp struct {
+        data string
+        err  error
+    }
+    ch := make(chan resp, 1)
+    go func() {
+        result, err := whois.Whois(domain)
+        ch <- resp{data: result, err: err}
+    }()
+
+    select {
+    case r := <-ch:
+        return r.data, r.err
+    case <-time.After(timeout):
+        // Mark timeout for higher-level logic to classify as special
+        return "", fmt.Errorf("whois timeout")
+    }
 }
 
 // checkDNSRecords checks various DNS records for the domain
@@ -266,12 +288,13 @@ func CheckDomainAvailability(domain string) (bool, error) {
 
 
 
-	// If domain is reserved, it's not available
-	for _, sig := range signatures {
-		if sig == "RESERVED" {
-			return false, nil
-		}
-	}
+    // If domain is reserved, it's not available (record as special)
+    for _, sig := range signatures {
+        if sig == "RESERVED" {
+            addToSpecialStatus(domain, "RESERVED")
+            return false, nil
+        }
+    }
 
 	// Check if we have any registration signatures
 	hasRegistrationSignatures := false
@@ -310,14 +333,15 @@ func CheckDomainAvailability(domain string) (bool, error) {
 		fmt.Printf("DEBUG dc1.de: No registration signatures, performing WHOIS check (DNS signatures available: %v)\n", hasDNSSignatures)
 	}
 
-	maxRetries := 5  // Increased retry count for rate limit handling
-	baseDelay := 2 * time.Second
+    maxRetries := 5  // Increased retry count for rate limit handling
+    baseDelay := 2 * time.Second
+    perAttemptTimeout := 10 * time.Second
 
 	for i := 0; i < maxRetries; i++ {
-		result, err := whois.Whois(domain)
-		if err == nil {
-			// Convert WHOIS response to lowercase for case-insensitive matching
-			result = strings.ToLower(result)
+        result, err := whoisQueryWithTimeout(domain, perAttemptTimeout)
+        if err == nil {
+            // Convert WHOIS response to lowercase for case-insensitive matching
+            result = strings.ToLower(result)
 
 			// Special logging for dc1.de
 			if domain == "dc1.de" {
@@ -353,15 +377,30 @@ func CheckDomainAvailability(domain string) (bool, error) {
 				}
 			}
 
-			// Check for indicators that domain is definitely available
-			for _, indicator := range availableIndicators {
-				if strings.Contains(result, indicator) {
-					if domain == "dc1.de" {
-						fmt.Printf("DEBUG dc1.de: Found AVAILABLE indicator: %s\n", indicator)
-					}
-					return true, nil
-				}
-			}
+                // First, check for special cases that should NOT be treated as generally available
+                // Identity Digital Dropzone: special application phase, not general reg
+                if strings.Contains(result, "dropzone") ||
+                   strings.Contains(result, "available for application via the identity digital dropzone service") {
+                    addToSpecialStatus(domain, "DROPZONE_AVAILABLE")
+                    return false, nil
+                }
+                // Premium names (various registries)
+                if strings.Contains(result, "premium name") ||
+                   strings.Contains(result, "premium domain") ||
+                   strings.Contains(result, "premium") {
+                    addToSpecialStatus(domain, "PREMIUM")
+                    return false, nil
+                }
+
+                // Check for indicators that domain is definitely available
+                for _, indicator := range availableIndicators {
+                    if strings.Contains(result, indicator) {
+                        if domain == "dc1.de" {
+                            fmt.Printf("DEBUG dc1.de: Found AVAILABLE indicator: %s\n", indicator)
+                        }
+                        return true, nil
+                    }
+                }
 
 			// Check for registration indicators
 			enhancedRegisteredIndicators := []string{
@@ -434,18 +473,19 @@ func CheckDomainAvailability(domain string) (bool, error) {
 				}
 			}
 			break
-		} else {
-			if domain == "dc1.de" {
-				fmt.Printf("DEBUG dc1.de: WHOIS attempt %d failed: %v\n", i+1, err)
-			}
+        } else {
+            if domain == "dc1.de" {
+                fmt.Printf("DEBUG dc1.de: WHOIS attempt %d failed: %v\n", i+1, err)
+            }
 
 			// Check if this is a rate limit or access control error
 			errorStr := strings.ToLower(err.Error())
-			isRateLimit := strings.Contains(errorStr, "connection refused") ||
-						  strings.Contains(errorStr, "access control") ||
-						  strings.Contains(errorStr, "limit exceeded") ||
-						  strings.Contains(errorStr, "rate limit") ||
-						  strings.Contains(errorStr, "too many requests")
+            isRateLimit := strings.Contains(errorStr, "connection refused") ||
+                          strings.Contains(errorStr, "access control") ||
+                          strings.Contains(errorStr, "limit exceeded") ||
+                          strings.Contains(errorStr, "rate limit") ||
+                          strings.Contains(errorStr, "too many requests") ||
+                          strings.Contains(errorStr, "whois timeout")
 
 			if isRateLimit {
 				if domain == "dc1.de" {
@@ -517,14 +557,22 @@ func handleRateLimitedDomain(domain string, hasDNSSignatures bool) (bool, error)
 
 // addToSpecialStatus adds a domain to the special status tracking
 func addToSpecialStatus(domain, reason string) {
-	specialStatusMutex.Lock()
-	defer specialStatusMutex.Unlock()
+    specialStatusMutex.Lock()
+    defer specialStatusMutex.Unlock()
 
-	specialStatusDomains = append(specialStatusDomains, types.SpecialStatusDomain{
-		Domain: domain,
-		Status: reason,
-		Reason: fmt.Sprintf("WHOIS status: %s", reason),
-	})
+    // Deduplicate by domain+status to avoid duplicates from multiple detectors
+    for _, existing := range specialStatusDomains {
+        if existing.Domain == domain && strings.EqualFold(existing.Status, reason) {
+            // Already recorded
+            return
+        }
+    }
+
+    specialStatusDomains = append(specialStatusDomains, types.SpecialStatusDomain{
+        Domain: domain,
+        Status: reason,
+        Reason: fmt.Sprintf("WHOIS status: %s", reason),
+    })
 
 	// Also log for immediate visibility
 	fmt.Printf("SPECIAL STATUS: %s - %s\n", domain, reason)
@@ -543,7 +591,12 @@ func GetSpecialStatusDomains() []types.SpecialStatusDomain {
 
 // ClearSpecialStatusDomains clears the special status domains list
 func ClearSpecialStatusDomains() {
-	specialStatusMutex.Lock()
-	defer specialStatusMutex.Unlock()
-	specialStatusDomains = nil
+    specialStatusMutex.Lock()
+    defer specialStatusMutex.Unlock()
+    specialStatusDomains = nil
+}
+
+// ReportSpecialStatus allows external packages to record a special status
+func ReportSpecialStatus(domainName, reason string) {
+    addToSpecialStatus(domainName, reason)
 }
