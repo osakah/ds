@@ -397,3 +397,45 @@ sed 's/regex_filter_aabb = "^([a-z])\\\\1([a-z])\\\\2$"/regex_filter = "^([a-z])
 - `-workers int`: 并发工作线程数（默认：10）
 - `-delay int`: 查询间隔（毫秒）（默认：1000）
 - `-config string`: 配置文件路径（默认：config/config.toml）
+
+## 扫描多级域名（如 aa.bbb.cc）
+
+工具支持把“后缀”视为固定部分，因此可以直接把多级后缀写进 `-s` 即可。例如需要扫描形如 `aa.bbb.cc` 的域名（可变的是最左侧的 `aa`），把后缀设置为 `.bbb.cc`，把长度设置为 2：
+
+```bash
+# 纯字母（aa、ab、...、zz）
+go run main.go -l 2 -s .bbb.cc -p D -workers 15 -delay 500
+
+# 纯数字（00、01、...、99）
+go run main.go -l 2 -s .bbb.cc -p d
+
+# 字母数字（a0、a1、...、z9）
+go run main.go -l 2 -s .bbb.cc -p a
+```
+
+同样也可以在配置文件中设置：
+
+```toml
+[domain]
+length = 2
+suffix = ".bbb.cc"
+pattern = "D" # D=字母, d=数字, a=字母数字
+```
+
+提示：`suffix` 只要以点开头即可，允许像 `.bbb.cc` 这样的多级后缀。
+
+### 关于三级（及以上）“可用性”的说明
+
+- 本工具默认通过 DNS/WHOIS/SSL 迹象综合判断“是否已被注册”。WHOIS 通常只对可注册的二级域名（如 `bbb.cc`）有意义，像 `aa.bbb.cc` 这样的子域名并不存在“注册可用性”的概念。
+- 如果你的目标是“枚举并发现已存在的子域名”，建议启用 DNS 检查、关闭 WHOIS 检查，以 DNS 存在性为准：
+
+```toml
+[scanner.methods]
+dns_check = true
+whois_check = false
+ssl_check = false
+```
+
+这样会以 `A/MX/TXT/CNAME` 等记录是否存在来判断子域是否“存在/活跃”。
+
+> 如果需要使用字典进行更真实的子域枚举（如常见的 `www/mail/api` 等），可以把正则或长度/模式调整为更贴合的集合，或配合外部字典脚本批量生成前缀，再通过本工具进行 DNS 解析验证。
