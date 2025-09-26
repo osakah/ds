@@ -82,17 +82,62 @@ def classify_domains(input_file, output_dir):
     for pattern in sorted(pattern_domains.keys()):
         print(f"  {pattern}: {len(pattern_domains[pattern])} 个域名")
 
+def process_all_results():
+    """
+    自动处理domain-scan-results-combined目录下的所有文件
+    """
+    input_dir = "domain-scan-results-combined"
+    output_base_dir = "domain-check"
+
+    # 定义要处理的文件和对应的输出目录
+    files_to_process = [
+        ("registered_domains_all.txt", "registered"),
+        ("available_domains_all.txt", "available"),
+        ("special_status_domains_all.txt", "special")
+    ]
+
+    print("开始自动分类域名...")
+    print(f"输入目录: {input_dir}")
+    print(f"输出目录: {output_base_dir}")
+    print("-" * 50)
+
+    for filename, subdir in files_to_process:
+        input_file = os.path.join(input_dir, filename)
+        output_dir = os.path.join(output_base_dir, subdir)
+
+        if os.path.exists(input_file):
+            print(f"\n处理文件: {input_file}")
+            classify_domains(input_file, output_dir)
+            print(f"结果保存在: {output_dir}")
+        else:
+            print(f"警告: 文件 {input_file} 不存在，跳过处理")
+
+    print("\n" + "="*50)
+    print("所有域名分类完成！")
+    print(f"请检查 {output_base_dir} 目录查看分类结果")
+
 def main():
     parser = argparse.ArgumentParser(description='将域名按字符模式分类')
-    parser.add_argument('--input', '-i', required=True, help='输入域名文件路径')
-    parser.add_argument('--output', '-o', required=True, help='输出目录路径')
-    
+    parser.add_argument('--input', '-i', help='输入域名文件路径（可选，不指定则自动处理所有扫描结果）')
+    parser.add_argument('--output', '-o', help='输出目录路径（可选，不指定则使用默认路径）')
+
     args = parser.parse_args()
-    
+
+    # 如果没有指定参数，则自动处理所有结果
+    if not args.input and not args.output:
+        process_all_results()
+        return
+
+    # 如果指定了参数，则使用原有逻辑
+    if not args.input or not args.output:
+        print("错误: 如果指定参数，必须同时指定 --input 和 --output")
+        print("或者不指定任何参数以自动处理所有扫描结果")
+        exit(1)
+
     if not os.path.exists(args.input):
         print(f"错误: 输入文件 {args.input} 不存在")
         exit(1)
-    
+
     classify_domains(args.input, args.output)
     print(f"域名分类完成，结果保存在 {args.output} 目录中")
 

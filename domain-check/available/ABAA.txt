@@ -46,7 +46,6 @@ ljll.de
 lnll.de
 lpll.de
 lqll.de
-ltll.de
 lzll.de
 mqmm.de
 mzmm.de
@@ -66,7 +65,6 @@ qcqq.de
 qdqq.de
 qeqq.de
 qfqq.de
-qgqq.de
 qhqq.de
 qjqq.de
 qkqq.de
@@ -98,7 +96,6 @@ tjtt.de
 tqtt.de
 ujuu.de
 uquu.de
-utuu.de
 uzuu.de
 vjvv.de
 vmvv.de
@@ -114,11 +111,8 @@ ybyy.de
 ycyy.de
 ydyy.de
 yfyy.de
-yhyy.de
 yjyy.de
-ykyy.de
 ylyy.de
-ymyy.de
 ypyy.de
 yqyy.de
 yryy.de
@@ -134,5 +128,4 @@ zkzz.de
 zlzz.de
 zpzz.de
 zqzz.de
-zszz.de
 zwzz.de
