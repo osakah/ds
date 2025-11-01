@@ -1,6 +1,9 @@
 name: Batch Domain Scanner
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       batch_start:
@@ -38,7 +41,7 @@ on:
       batch_size:
         description: 'Number of batches to run (Letters: 1-26, Digits: 27-36, Alphanumeric: 1-36)'
         required: false
-        default: '10'
+        default: '26'
         type: choice
         options:
           - 1
@@ -96,7 +99,7 @@ on:
       base_domain:
         description: 'Domain suffix to scan'
         required: false
-        default: '.de'
+        default: '.me'
         type: choice
         options:
           - .de
